@@ -372,54 +372,120 @@ function checkIfOutgoingMessage(messageElement) {
   // Instagram typically aligns outgoing messages to the right
   // and incoming messages to the left, with different styling
   
+  debugLog('🔍 Analyzing message direction...', messageElement.textContent.trim());
+  
   const checks = [
-    // Check parent containers for alignment classes
+    // Check 1: Look for Instagram's message container structure
     () => {
-      const parent = messageElement.closest('div[class*="justify"], div[class*="flex"]');
-      if (parent) {
-        const classes = parent.className;
-        return classes.includes('justify-end') || classes.includes('flex-row-reverse') || 
-               classes.includes('right') || classes.includes('self-end');
+      // Find the message row/container that holds this text
+      const messageRow = messageElement.closest('div[role="row"], div[class*="message"], div[data-testid*="message"]');
+      if (messageRow) {
+        const rect = messageRow.getBoundingClientRect();
+        const containerRect = messageRow.closest('div[role="main"], div[class*="conversation"]')?.getBoundingClientRect();
+        
+        if (containerRect) {
+          const centerX = containerRect.left + (containerRect.width / 2);
+          const messageCenter = rect.left + (rect.width / 2);
+          const isOnRight = messageCenter > centerX;
+          debugLog('Position check', { isOnRight, messageCenter, centerX });
+          return isOnRight;
+        }
       }
       return false;
     },
     
-    // Check for specific Instagram outgoing message indicators
+    // Check 2: Look for flex direction and justify content
     () => {
-      const messageContainer = messageElement.closest('[data-testid*="message"], div[role="row"]');
-      if (messageContainer) {
-        const computedStyle = window.getComputedStyle(messageContainer);
-        return computedStyle.textAlign === 'right' || computedStyle.marginLeft === 'auto';
+      const container = messageElement.closest('div');
+      let current = container;
+      for (let i = 0; i < 5 && current; i++) {
+        const style = window.getComputedStyle(current);
+        const classes = current.className;
+        
+        // Check for right alignment indicators
+        if (style.justifyContent === 'flex-end' || 
+            style.textAlign === 'right' ||
+            classes.includes('justify-end') ||
+            classes.includes('flex-row-reverse') ||
+            classes.includes('ml-auto') ||
+            style.marginLeft === 'auto') {
+          debugLog('Style check found outgoing', { classes, justifyContent: style.justifyContent });
+          return true;
+        }
+        current = current.parentElement;
       }
       return false;
     },
     
-    // Check if message bubble has outgoing styling
+    // Check 3: Look for message bubble styling (outgoing usually has colored background)
     () => {
-      const bubble = messageElement.closest('div[class*="bubble"], div[class*="message"]');
+      const bubble = messageElement.closest('div[class*="message"], div');
       if (bubble) {
         const style = window.getComputedStyle(bubble);
         const bgColor = style.backgroundColor;
-        // Outgoing messages often have colored backgrounds (blue, purple, etc.)
-        return bgColor !== 'rgba(0, 0, 0, 0)' && bgColor !== 'transparent' && 
-               !bgColor.includes('255, 255, 255'); // Not white
+        
+        // Parse background color to check if it's not white/transparent
+        if (bgColor && bgColor !== 'rgba(0, 0, 0, 0)' && bgColor !== 'transparent') {
+          // Check if it's not white (outgoing messages usually have colored bubbles)
+          const isColored = !bgColor.includes('255, 255, 255') && 
+                           !bgColor.includes('rgb(255, 255, 255)') &&
+                           bgColor !== 'rgb(255, 255, 255)' &&
+                           bgColor !== 'white';
+          debugLog('Background color check', { bgColor, isColored });
+          return isColored;
+        }
+      }
+      return false;
+    },
+    
+    // Check 4: Check sibling elements for patterns
+    () => {
+      const parent = messageElement.closest('div[role="row"]') || messageElement.parentElement;
+      if (parent) {
+        const siblings = Array.from(parent.parentElement?.children || []);
+        const index = siblings.indexOf(parent);
+        
+        // Look for patterns in previous messages
+        if (index > 0) {
+          const prevSibling = siblings[index - 1];
+          if (prevSibling) {
+            const prevRect = prevSibling.getBoundingClientRect();
+            const currentRect = parent.getBoundingClientRect();
+            const containerRect = parent.closest('div[role="main"]')?.getBoundingClientRect();
+            
+            if (containerRect) {
+              const centerX = containerRect.left + (containerRect.width / 2);
+              const isCurrentOnRight = currentRect.left + (currentRect.width / 2) > centerX;
+              debugLog('Sibling pattern check', { isCurrentOnRight });
+              return isCurrentOnRight;
+            }
+          }
+        }
       }
       return false;
     }
   ];
   
-  // If any check indicates outgoing message, consider it outgoing
-  const isOutgoing = checks.some(check => {
+  // Try each check and log results
+  const results = checks.map((check, index) => {
     try {
-      return check();
+      const result = check();
+      debugLog(`Check ${index + 1} result:`, result);
+      return result;
     } catch (error) {
-      debugLog('Error in outgoing message check', error);
+      debugLog(`Check ${index + 1} error:`, error.message);
       return false;
     }
   });
   
-  debugLog('Message direction check', { 
+  // If majority of checks indicate outgoing, consider it outgoing
+  const trueCount = results.filter(Boolean).length;
+  const isOutgoing = trueCount >= 2; // At least 2 checks must pass
+  
+  debugLog('🎯 Final message direction decision', { 
     text: messageElement.textContent.trim(), 
+    checkResults: results,
+    trueCount,
     isOutgoing,
     element: messageElement 
   });
