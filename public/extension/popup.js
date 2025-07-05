@@ -8,6 +8,11 @@ const autoReplyMessageElement = document.getElementById('autoReplyMessage');
 const saveButton = document.getElementById('saveButton');
 const successMessage = document.getElementById('successMessage');
 const charCount = document.getElementById('charCount');
+const autoReplyToggle = document.getElementById('autoReplyToggle');
+const statusIndicator = document.getElementById('statusIndicator');
+const statusDot = document.getElementById('statusDot');
+const statusText = document.getElementById('statusText');
+const statusDesc = document.getElementById('statusDesc');
 
 // Update character count
 function updateCharCount() {
@@ -25,11 +30,57 @@ function updateCharCount() {
 
 // Load saved settings
 function loadSettings() {
-  chrome.storage.local.get(['autoReplyMessage'], (result) => {
+  chrome.storage.local.get(['autoReplyMessage', 'autoReplyEnabled'], (result) => {
     const savedMessage = result.autoReplyMessage || defaultMessage;
+    const isEnabled = result.autoReplyEnabled !== false; // Default to true
+    
     autoReplyMessageElement.value = savedMessage;
+    autoReplyToggle.checked = isEnabled;
     updateCharCount();
-    console.log('📖 Loaded settings:', savedMessage);
+    updateToggleStatus(isEnabled);
+    console.log('📖 Loaded settings:', { message: savedMessage, enabled: isEnabled });
+  });
+}
+
+// Update toggle status display
+function updateToggleStatus(enabled) {
+  const toggleSection = autoReplyToggle.closest('.bg-gray-50');
+  const statusText = toggleSection.querySelector('.text-sm.font-medium');
+  const statusDesc = toggleSection.querySelector('.text-xs');
+  
+  if (enabled) {
+    toggleSection.className = 'mb-4 p-3 bg-green-50 border border-green-200 rounded-lg';
+    statusText.className = 'text-sm font-medium text-green-700';
+    statusDesc.className = 'text-xs text-green-600';
+    statusDesc.textContent = 'Auto-reply is enabled';
+  } else {
+    toggleSection.className = 'mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg';
+    statusText.className = 'text-sm font-medium text-gray-700';
+    statusDesc.className = 'text-xs text-gray-500';
+    statusDesc.textContent = 'Auto-reply is disabled';
+  }
+}
+
+// Handle toggle change
+function handleToggleChange() {
+  const isEnabled = autoReplyToggle.checked;
+  chrome.storage.local.set({ autoReplyEnabled: isEnabled }, () => {
+    updateToggleStatus(isEnabled);
+    console.log('🔄 Auto-reply enabled:', isEnabled);
+    
+    // Send message to content script about state change
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0] && tabs[0].url && tabs[0].url.includes('instagram.com')) {
+        chrome.tabs.sendMessage(tabs[0].id, {
+          action: 'toggleAutoReply',
+          enabled: isEnabled
+        }, (response) => {
+          if (chrome.runtime.lastError) {
+            console.log('Content script not ready:', chrome.runtime.lastError.message);
+          }
+        });
+      }
+    });
   });
 }
 
@@ -156,6 +207,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   
   saveButton.addEventListener('click', saveSettings);
+  autoReplyToggle.addEventListener('change', handleToggleChange);
   
   console.log('✅ Popup initialized successfully');
 });

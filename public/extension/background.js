@@ -6,19 +6,20 @@ chrome.runtime.onInstalled.addListener((details) => {
   console.log('🎉 Extension installed:', details.reason);
   
   if (details.reason === 'install') {
-    // Set default auto-reply message
+    // Set default auto-reply message and enable state
     chrome.storage.local.set({
-      autoReplyMessage: 'Hey! How are you?'
+      autoReplyMessage: 'Hey! How are you?',
+      autoReplyEnabled: true
     }, () => {
       console.log('✅ Default settings initialized');
     });
     
-    // Show welcome notification (optional)
+    // Show welcome notification
     chrome.notifications.create({
       type: 'basic',
       iconUrl: 'icon-48.png',
       title: 'Instagram Auto Reply',
-      message: 'Extension installed! Click the extension icon to configure your auto-reply message.'
+      message: 'Extension installed! Click the extension icon to configure your auto-reply message and toggle.'
     });
   }
 });

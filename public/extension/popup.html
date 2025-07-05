@@ -20,12 +20,26 @@
     </div>
 
     <!-- Status Indicator -->
-    <div class="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+    <div id="statusIndicator" class="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
       <div class="flex items-center">
-        <div class="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></div>
-        <span class="text-sm text-green-700 font-medium">Extension Active</span>
+        <div id="statusDot" class="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></div>
+        <span id="statusText" class="text-sm text-green-700 font-medium">Extension Active</span>
       </div>
-      <p class="text-xs text-green-600 mt-1">Monitoring Instagram DMs for "Hello" messages</p>
+      <p id="statusDesc" class="text-xs text-green-600 mt-1">Monitoring Instagram DMs for "Hello" messages</p>
+    </div>
+
+    <!-- Enable/Disable Toggle -->
+    <div class="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+      <div class="flex items-center justify-between">
+        <div>
+          <span class="text-sm font-medium text-gray-700">Auto-Reply</span>
+          <p class="text-xs text-gray-500">Enable or disable automatic replies</p>
+        </div>
+        <label class="relative inline-flex items-center cursor-pointer">
+          <input type="checkbox" id="autoReplyToggle" class="sr-only peer" checked>
+          <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-500"></div>
+        </label>
+      </div>
     </div>
 
     <!-- Auto Reply Message Input -->
