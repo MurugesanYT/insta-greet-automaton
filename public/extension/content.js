@@ -7,6 +7,9 @@ let isProcessing = false;
 let autoReplyEnabled = true;
 let retryCount = 0;
 const MAX_RETRIES = 3;
+let lastAutoReplyTime = 0;
+const MIN_REPLY_INTERVAL = 10000; // 10 seconds minimum between auto-replies
+let processedMessageIds = new Set(); // Track processed messages
 
 // Enhanced debugging
 function debugLog(message, data = null) {
@@ -198,39 +201,68 @@ async function findAndClickSendButton(messageInput) {
   debugLog('🔍 Looking for send button...');
   
   const sendStrategies = [
-    // Strategy 1: Look for Instagram's specific send button structure
+    // Strategy 1: Look for Instagram's specific send button (avoiding emoji button)
     () => {
       debugLog('Strategy 1: Instagram send button structure...');
       
-      // Instagram's send button is typically a div with role="button" containing an SVG
-      const sendButtons = document.querySelectorAll('div[role="button"]');
+      // Find the message input container first
+      const inputContainer = messageInput.closest('div');
+      if (!inputContainer) return false;
       
-      for (const button of sendButtons) {
+      // Look for buttons in the same container as the input
+      const buttons = inputContainer.parentElement?.querySelectorAll('div[role="button"]') || [];
+      
+      for (const button of buttons) {
+        // Skip if this looks like an emoji button
+        const ariaLabel = button.getAttribute('aria-label') || '';
+        const title = button.getAttribute('title') || '';
+        
+        // Skip emoji, attachment, and other non-send buttons
+        if (ariaLabel.toLowerCase().includes('emoji') || 
+            ariaLabel.toLowerCase().includes('attach') ||
+            ariaLabel.toLowerCase().includes('gif') ||
+            ariaLabel.toLowerCase().includes('sticker') ||
+            title.toLowerCase().includes('emoji')) {
+          debugLog('Skipping non-send button', { ariaLabel, title });
+          continue;
+        }
+        
         const svg = button.querySelector('svg');
         if (svg) {
-          // Check if this looks like a send button by examining the SVG path or viewBox
-          const paths = svg.querySelectorAll('path');
           const viewBox = svg.getAttribute('viewBox');
+          const paths = svg.querySelectorAll('path');
           
-          // Instagram send button typically has viewBox="0 0 24 24" and specific path structure
-          if (viewBox && (viewBox.includes('24') || viewBox.includes('20'))) {
+          // Instagram send button usually has a paper plane icon
+          // Check for typical send button path patterns
+          let looksLikeSendIcon = false;
+          for (const path of paths) {
+            const d = path.getAttribute('d') || '';
+            // Send icons typically have paths with "L" (line) commands forming arrow/plane shapes
+            if (d.includes('L') && (d.includes('M') || d.includes('m')) && d.length > 20) {
+              looksLikeSendIcon = true;
+              break;
+            }
+          }
+          
+          if (looksLikeSendIcon || (viewBox && viewBox.includes('24'))) {
             const rect = button.getBoundingClientRect();
-            if (rect.width > 0 && rect.height > 0) {
-              // Additional check: make sure it's near the message input
-              const inputRect = messageInput.getBoundingClientRect();
-              const distance = Math.abs(rect.top - inputRect.top);
+            const inputRect = messageInput.getBoundingClientRect();
+            
+            // Send button should be to the right of the input
+            const isToTheRight = rect.left > inputRect.right - 100;
+            const isAtSameLevel = Math.abs(rect.top - inputRect.top) < 50;
+            
+            if (rect.width > 0 && rect.height > 0 && isToTheRight && isAtSameLevel) {
+              debugLog('Found Instagram send button', { 
+                ariaLabel, 
+                viewBox, 
+                looksLikeSendIcon,
+                position: { left: rect.left, top: rect.top },
+                inputPosition: { right: inputRect.right, top: inputRect.top }
+              });
               
-              if (distance < 100) { // Button should be close to input
-                debugLog('Found Instagram send button', { viewBox, distance });
-                
-                // Try multiple click methods
-                button.click();
-                button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-                button.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-                button.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-                
-                return true;
-              }
+              button.click();
+              return true;
             }
           }
         }
@@ -403,6 +435,25 @@ function checkForHelloMessage() {
     return false;
   }
   
+  // Check if we're in a login challenge or error page (prevent infinite loops)
+  if (document.querySelector('input[name="username"]') || 
+      document.querySelector('input[name="password"]') ||
+      window.location.href.includes('accounts/login') ||
+      document.title.includes('Login')) {
+    debugLog('🚫 Detected login page, stopping auto-reply to prevent loops');
+    return false;
+  }
+  
+  // Rate limiting: Don't send auto-replies too frequently
+  const now = Date.now();
+  if (now - lastAutoReplyTime < MIN_REPLY_INTERVAL) {
+    debugLog('🚫 Rate limiting: Too soon since last auto-reply', { 
+      timeSince: now - lastAutoReplyTime, 
+      required: MIN_REPLY_INTERVAL 
+    });
+    return false;
+  }
+  
   debugLog('🔍 Checking for Hello message...');
   
   // Enhanced message selectors for Instagram's current structure
@@ -454,8 +505,17 @@ function checkForHelloMessage() {
   const latestMessage = messages[messages.length - 1];
   const messageText = latestMessage.textContent.trim();
   
+  // Create a unique identifier for this message
+  const messageId = messageText + latestMessage.offsetTop + latestMessage.offsetLeft;
+  
   debugLog('Recent messages', recentMessages.map(m => m.textContent.trim()));
   debugLog('Latest message', messageText);
+  
+  // Check if we've already processed this message
+  if (processedMessageIds.has(messageId)) {
+    debugLog('🚫 Message already processed, skipping', messageId);
+    return false;
+  }
   
   // Check if the latest message is exactly "Hello" and we haven't processed it yet
   if (messageText === 'Hello' && latestMessage !== lastProcessedMessage) {
@@ -464,7 +524,11 @@ function checkForHelloMessage() {
     
     if (isOutgoingMessage) {
       debugLog('👋 Found outgoing "Hello" message, preparing auto-reply...');
+      
+      // Mark this message as processed
+      processedMessageIds.add(messageId);
       lastProcessedMessage = latestMessage;
+      lastAutoReplyTime = now;
       
       // Wait a bit before replying to seem more natural and allow Instagram to process
       setTimeout(() => {
