@@ -198,88 +198,201 @@ async function findAndClickSendButton(messageInput) {
   debugLog('🔍 Looking for send button...');
   
   const sendStrategies = [
-    // Strategy 1: Traditional button selectors
+    // Strategy 1: Look for Instagram's specific send button structure
     () => {
-      const selectors = [
-        'button[type="submit"]',
-        'div[role="button"]:has(svg[aria-label*="Send"])',
-        'button:has(svg[aria-label*="Send"])',
-        '[data-testid*="send"]',
-        'div[role="button"] svg[viewBox*="24"]' // Instagram send icon viewBox
-      ];
+      debugLog('Strategy 1: Instagram send button structure...');
       
-      for (const selector of selectors) {
-        try {
-          const elements = document.querySelectorAll(selector);
-          for (const element of elements) {
-            const rect = element.getBoundingClientRect();
+      // Instagram's send button is typically a div with role="button" containing an SVG
+      const sendButtons = document.querySelectorAll('div[role="button"]');
+      
+      for (const button of sendButtons) {
+        const svg = button.querySelector('svg');
+        if (svg) {
+          // Check if this looks like a send button by examining the SVG path or viewBox
+          const paths = svg.querySelectorAll('path');
+          const viewBox = svg.getAttribute('viewBox');
+          
+          // Instagram send button typically has viewBox="0 0 24 24" and specific path structure
+          if (viewBox && (viewBox.includes('24') || viewBox.includes('20'))) {
+            const rect = button.getBoundingClientRect();
             if (rect.width > 0 && rect.height > 0) {
-              const button = element.tagName === 'svg' ? element.closest('div[role="button"]') : element;
-              if (button && !button.disabled) {
-                debugLog('Found send button via selector', selector);
+              // Additional check: make sure it's near the message input
+              const inputRect = messageInput.getBoundingClientRect();
+              const distance = Math.abs(rect.top - inputRect.top);
+              
+              if (distance < 100) { // Button should be close to input
+                debugLog('Found Instagram send button', { viewBox, distance });
+                
+                // Try multiple click methods
                 button.click();
+                button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                button.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+                button.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+                
                 return true;
               }
             }
           }
-        } catch (error) {
-          debugLog('Error with selector', { selector, error: error.message });
         }
       }
       return false;
     },
     
-    // Strategy 2: Enter key press
+    // Strategy 2: Enhanced Enter key with proper focus sequence
     () => {
-      debugLog('Trying Enter key...');
-      const enterEvent = new KeyboardEvent('keydown', {
-        key: 'Enter',
-        code: 'Enter',
-        keyCode: 13,
-        which: 13,
-        bubbles: true,
-        cancelable: true
-      });
-      messageInput.dispatchEvent(enterEvent);
+      debugLog('Strategy 2: Enhanced Enter key sequence...');
+      
+      // Ensure input is focused and has content
+      messageInput.focus();
+      messageInput.click();
+      
+      // Wait a moment for focus
+      setTimeout(() => {
+        // Try multiple enter key events
+        const events = [
+          new KeyboardEvent('keydown', {
+            key: 'Enter',
+            code: 'Enter',
+            keyCode: 13,
+            which: 13,
+            bubbles: true,
+            cancelable: true
+          }),
+          new KeyboardEvent('keypress', {
+            key: 'Enter',
+            code: 'Enter',
+            keyCode: 13,
+            which: 13,
+            bubbles: true,
+            cancelable: true
+          }),
+          new KeyboardEvent('keyup', {
+            key: 'Enter',
+            code: 'Enter',
+            keyCode: 13,
+            which: 13,
+            bubbles: true,
+            cancelable: true
+          })
+        ];
+        
+        events.forEach(event => {
+          messageInput.dispatchEvent(event);
+          document.dispatchEvent(event);
+        });
+      }, 100);
+      
       return true;
     },
     
-    // Strategy 3: Look for buttons near the input
+    // Strategy 3: Form submission
     () => {
-      debugLog('Looking for buttons near input...');
-      const parent = messageInput.closest('form, div[role="form"], [role="main"]');
-      if (parent) {
-        const buttons = parent.querySelectorAll('button, div[role="button"]');
-        for (const button of buttons) {
+      debugLog('Strategy 3: Form submission...');
+      const form = messageInput.closest('form');
+      if (form) {
+        debugLog('Found form, attempting submission');
+        
+        // Try different submission methods
+        try {
+          form.submit();
+          return true;
+        } catch (error) {
+          debugLog('Form submit failed', error);
+          
+          // Try dispatching submit event
+          const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
+          form.dispatchEvent(submitEvent);
+          return true;
+        }
+      }
+      return false;
+    },
+    
+    // Strategy 4: Look for send button by text content or aria-label
+    () => {
+      debugLog('Strategy 4: Send button by text/aria-label...');
+      
+      const allButtons = document.querySelectorAll('button, div[role="button"], [role="button"]');
+      
+      for (const button of allButtons) {
+        const ariaLabel = button.getAttribute('aria-label') || '';
+        const textContent = button.textContent || '';
+        const title = button.getAttribute('title') || '';
+        
+        // Check for send-related text
+        const sendIndicators = ['send', 'enviar', 'envoyer', 'senden', 'invia'];
+        const hasSendText = sendIndicators.some(indicator => 
+          ariaLabel.toLowerCase().includes(indicator) ||
+          textContent.toLowerCase().includes(indicator) ||
+          title.toLowerCase().includes(indicator)
+        );
+        
+        if (hasSendText) {
           const rect = button.getBoundingClientRect();
-          if (rect.width > 0 && rect.height > 0 && button.offsetParent !== null) {
-            // Check if button looks like a send button (has svg, is positioned right, etc.)
-            const hasSvg = button.querySelector('svg');
-            const buttonText = button.textContent.toLowerCase();
-            if (hasSvg || buttonText.includes('send')) {
-              debugLog('Found potential send button near input');
-              button.click();
-              return true;
-            }
+          if (rect.width > 0 && rect.height > 0) {
+            debugLog('Found send button by text/aria-label', { ariaLabel, textContent, title });
+            
+            button.click();
+            button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            return true;
           }
         }
       }
       return false;
+    },
+    
+    // Strategy 5: Find rightmost button near input (usually send button position)
+    () => {
+      debugLog('Strategy 5: Rightmost button near input...');
+      
+      const inputRect = messageInput.getBoundingClientRect();
+      const allButtons = document.querySelectorAll('button, div[role="button"]');
+      let rightmostButton = null;
+      let maxRight = 0;
+      
+      for (const button of allButtons) {
+        const rect = button.getBoundingClientRect();
+        const verticalDistance = Math.abs(rect.top - inputRect.top);
+        
+        // Button should be roughly at the same vertical level as input
+        if (rect.width > 0 && rect.height > 0 && verticalDistance < 80) {
+          if (rect.right > maxRight) {
+            maxRight = rect.right;
+            rightmostButton = button;
+          }
+        }
+      }
+      
+      if (rightmostButton) {
+        debugLog('Found rightmost button', { maxRight });
+        
+        rightmostButton.click();
+        rightmostButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        return true;
+      }
+      
+      return false;
     }
   ];
   
-  // Try each strategy
-  for (const strategy of sendStrategies) {
+  // Try each strategy with delay between attempts
+  for (let i = 0; i < sendStrategies.length; i++) {
     try {
-      if (await strategy()) {
-        await new Promise(resolve => setTimeout(resolve, 500)); // Wait to see if it worked
+      debugLog(`Trying strategy ${i + 1}...`);
+      if (await sendStrategies[i]()) {
+        debugLog(`Strategy ${i + 1} completed, waiting to verify...`);
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait longer to see if it worked
         return true;
       }
     } catch (error) {
-      debugLog('Strategy failed', error);
+      debugLog(`Strategy ${i + 1} failed`, error);
     }
+    
+    // Small delay between strategies
+    await new Promise(resolve => setTimeout(resolve, 200));
   }
   
+  debugLog('❌ All send strategies failed');
   return false;
 }
 
