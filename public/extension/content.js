@@ -369,27 +369,30 @@ function checkForHelloMessage() {
 
 // Helper function to determine if a message is outgoing (sent by us)
 function checkIfOutgoingMessage(messageElement) {
-  // Instagram typically aligns outgoing messages to the right
-  // and incoming messages to the left, with different styling
-  
   debugLog('🔍 Analyzing message direction...', messageElement.textContent.trim());
   
   const checks = [
-    // Check 1: Look for Instagram's message container structure
+    // Check 1: Look for Instagram's message container structure and positioning
     () => {
-      // Find the message row/container that holds this text
-      const messageRow = messageElement.closest('div[role="row"], div[class*="message"], div[data-testid*="message"]');
-      if (messageRow) {
-        const rect = messageRow.getBoundingClientRect();
-        const containerRect = messageRow.closest('div[role="main"], div[class*="conversation"]')?.getBoundingClientRect();
+      const messageContainer = messageElement.closest('div');
+      let current = messageContainer;
+      
+      // Look up the DOM tree for positioning clues
+      for (let i = 0; i < 8 && current; i++) {
+        const rect = current.getBoundingClientRect();
+        const parentRect = current.parentElement?.getBoundingClientRect();
         
-        if (containerRect) {
-          const centerX = containerRect.left + (containerRect.width / 2);
-          const messageCenter = rect.left + (rect.width / 2);
-          const isOnRight = messageCenter > centerX;
-          debugLog('Position check', { isOnRight, messageCenter, centerX });
-          return isOnRight;
+        if (parentRect && rect.width > 0) {
+          const rightEdgeDistance = parentRect.right - rect.right;
+          const leftEdgeDistance = rect.left - parentRect.left;
+          
+          // If message is much closer to right edge, it's likely outgoing
+          if (rightEdgeDistance < 50 && leftEdgeDistance > 50) {
+            debugLog('Position check - found right-aligned message', { rightEdgeDistance, leftEdgeDistance });
+            return true;
+          }
         }
+        current = current.parentElement;
       }
       return false;
     },
